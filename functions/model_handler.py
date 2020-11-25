@@ -21,7 +21,7 @@ class TrainHandler:
                                                      beta=config.beta)
         self.optimizer = tf.keras.optimizers.SGD(learning_rate=lr, momentum=0.9)
         self.summary_writer = tf.summary.create_file_writer(os.path.join(config.model_dir, 'summary'))
-        self.epoch, self.step = 1, 1
+        self.model_name = config.model_name
         self.model = model
         self.max_step = config.max_step
         self.logging_step = config.logging_step
@@ -29,8 +29,10 @@ class TrainHandler:
         self.saving_step = config.saving_step
         self.summary_step = config.summary_step
         self.model_dir = config.model_dir
-        # loaded_model = tf.keras.models.load_model(os.path.join(config.model_dir, 'model_ckpt', 'step-000020'))
-        # model.load_model(os.path.join(config.model_dir, 'model_ckpt', 'step-000020'))
+        self.ckpt = tf.train.Checkpoint(step=tf.Variable(0), epoch=tf.Variable(0), optimizer=self.optimizer, net=self.model)
+        self.ckpt_manager = tf.train.CheckpointManager(self.ckpt,
+                                                       self.model_dir,
+                                                       max_to_keep=None)
 
     def _feed(self, x, y, training):
         pred = self.model(x, training)
@@ -43,6 +45,7 @@ class TrainHandler:
         trainable_variables = self.model.trainable_variables
         gradients = g.gradient(loss, trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, trainable_variables))
+        self.ckpt.step.assign_add(1)
         return loss
 
     def _val_step(self, val_x, val_y):
@@ -51,44 +54,43 @@ class TrainHandler:
 
     def _write_scalar_summary(self, name, value):
         with self.summary_writer.as_default():
-            tf.summary.scalar(name, value, step=self.step)
+            tf.summary.scalar(name, value, step=self.ckpt.step)
 
     def train(self):
-        while self.step < self.max_step:
+        while self.ckpt.step < self.max_step:
             avg_train_loss = 0
             tic = time.time()
             for i, (x, y) in enumerate(iter(self.train_data)):
                 loss = self._train_step(x, y)
                 avg_train_loss += loss
-                if self.step % self.logging_step == 0:
-                    print('Training epoch:%d, Step: %d, loss:%.3f, lr: %.9f'
-                          % (self.epoch, self.step, loss, self.optimizer._decayed_lr(tf.float32)), end='\r', flush=True)
+                if self.ckpt.step % self.logging_step == 0:
+                    print('Model name: %s, Epoch:%d, Step: %d, Loss:%.3f, lr: %.9f'
+                          % (self.model_name, self.ckpt.epoch, self.ckpt.step, loss, self.optimizer._decayed_lr(tf.float32)), end='\r', flush=True)
 
-                if self.step % self.val_step == 0:
+                if self.ckpt.step % self.val_step == 0:
                     avg_val_loss = 0
                     for j, (x_val, y_val) in enumerate(iter(self.val_data)):
                         avg_val_loss += self._val_step(x_val, y_val)
-                        print('Val loss @ epoch-%d: %.3f' % (self.epoch, loss), end='\r', flush=True)
+                        print('Val loss @ epoch-%d: %.3f' % (self.ckpt.epoch, loss), end='\r', flush=True)
                     avg_val_loss /= (j + 1)
                     self._write_scalar_summary('val_loss', avg_val_loss)
-                    print('Average val loss @ epoch-%d: %.3f' % (self.epoch, avg_val_loss / (j + 1)))
+                    print('Average val loss @ epoch-%d: %.3f \n' % (self.ckpt.epoch, avg_val_loss / (j + 1)))
 
-                if self.step % self.saving_step == 0:
-                    self.model.save(filepath=os.path.join(self.model_dir, 'model_ckpt', 'step-%06d' % self.step), save_format='tf')
-                    print('model @ step-%d is saved' % self.step)
+                if self.ckpt.step % self.saving_step == 0:
+                    self.ckpt_manager.save(checkpoint_number=self.ckpt.step)
+                    print('%s @ step-%d is saved' % (self.model_name, self.ckpt.step))
 
-                if self.step % self.summary_step == 0:
+                if self.ckpt.step % self.summary_step == 0:
                     self._write_scalar_summary('train_loss', avg_train_loss / (i + 1))
                     self._write_scalar_summary('learning_rate', self.optimizer._decayed_lr(tf.float32))
 
-                if self.step >= self.max_step:
+                if self.ckpt.step >= self.max_step:
                     self._write_scalar_summary('train_loss', avg_train_loss / (i + 1))
                     break
-                self.step += 1
             print('Average train loss @ epoch-%d (step-%d): %.3f | %.3f sec/epoch'
-                  % (self.epoch, self.step - 1, avg_train_loss / (i + 1), time.time() - tic))
+                  % (self.ckpt.epoch, self.ckpt.step - 1, avg_train_loss / (i + 1), time.time() - tic))
             self._write_scalar_summary('train_loss', avg_train_loss / (i + 1))
-            self.epoch += 1
+            self.ckpt.epoch.assign_add(1)
 
 
 class EvalHandler:

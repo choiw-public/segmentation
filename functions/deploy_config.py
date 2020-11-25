@@ -9,6 +9,7 @@ def deploy(args):
     config = imp.import_module(config_path).config
     config["model_dir"] = os.path.join('./models', args.model_name)
     config['phase'] = phase
+    config['model_name'] = args.model_name
     model_fn_path = ".".join(['models', args.model_name, 'model_fn'])
     config['model_fn'] = imp.import_module(model_fn_path).ModelFunction
     if phase == "train":
