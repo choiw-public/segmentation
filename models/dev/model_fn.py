@@ -8,6 +8,7 @@ class ModelFunction(Model):
     def __init__(self, config):
         super(ModelFunction, self).__init__()
         l2_decay = config.weight_decay
+        training = config.training
         self.root = conv_blocks.Conv(8, 5, 1, l2_decay, True, False, 0, 'root')
 
         self.encoder1a = conv_blocks.DenseConcat([8, 8], [5, 3], l2_decay, 0, 'encoder1a')  # 4
@@ -51,14 +52,14 @@ class ModelFunction(Model):
 
         decoder1 = self.decoder1(encoder4b, training=training)
         _, h, w, _ = get_shape(encoder3a_skip)
-        decoder1 = tf.image.resize(decoder1, [h, w]) * encoder3a_skip
+        decoder1 = tf.image.resize(decoder1, [h, w]) + encoder3a_skip
 
         decoder2 = self.decoder2(decoder1, training=training)
         _, h, w, _ = get_shape(encoder2a_skip)
-        decoder2 = tf.image.resize(decoder2, [h, w]) * encoder2a_skip
+        decoder2 = tf.image.resize(decoder2, [h, w]) + encoder2a_skip
 
         decoder3 = self.decoder3(decoder2, training=training)
         _, h, w, _ = get_shape(encoder1a_skip)
-        decoder3 = tf.image.resize(decoder3, [h, w]) * encoder1a_skip
+        decoder3 = tf.image.resize(decoder3, [h, w]) + encoder1a_skip
 
         return self.logit(decoder3)

@@ -1,105 +1,94 @@
 from functions.utils import list_getter
 from functions import loss_functions
 from cv2 import VideoCapture, VideoWriter, VideoWriter_fourcc, imwrite
+from functions.data_pipeline import get_datasets
 from math import pi, isnan, isinf
 import importlib as imp
 import tensorflow as tf
 import tensorflow_addons as tfa
 import numpy as np
-import os
 import time
+import os
 
 
 class TrainHandler:
-    """
-    a parent class of ModelHandler
-    """
+    def __init__(self, model, config):
+        self.train_data, self.val_data = get_datasets(config)
+        lr = tf.keras.experimental.LinearCosineDecay(initial_learning_rate=config.init_lr,
+                                                     decay_steps=config.decay_steps,
+                                                     num_periods=config.num_periods,
+                                                     alpha=config.alpha,
+                                                     beta=config.beta)
+        self.optimizer = tf.keras.optimizers.SGD(learning_rate=lr, momentum=0.9)
+        self.summary_writer = tf.summary.create_file_writer(os.path.join(config.model_dir, 'summary'))
+        self.epoch, self.step = 1, 1
+        self.model = model
+        self.max_step = config.max_step
+        self.logging_step = config.logging_step
+        self.val_step = config.val_step
+        self.saving_step = config.saving_step
+        self.summary_step = config.summary_step
+        self.model_dir = config.model_dir
+        # loaded_model = tf.keras.models.load_model(os.path.join(config.model_dir, 'model_ckpt', 'step-000020'))
+        # model.load_model(os.path.join(config.model_dir, 'model_ckpt', 'step-000020'))
 
-    def _train_handler(self):
-        if self.config.device == 'tpu':
-            try:
-                tpu = tf.distribute.cluster_resolver.TPUClusterResolver()
-                print('Running on TPU ', tpu.cluster_spec().as_dict()['worker'])
-            except ValueError:
-                raise BaseException('ERROR: Not connected to a TPU runtime;')
-            tf.config.experimental_connect_to_cluster(tpu)
-            tf.tpu.experimental.initialize_tpu_system(tpu)
-            tpu_strategy = tf.distribute.experimental.TPUStrategy(tpu)
-            with tpu_strategy.scope():
-                model = self.config.model_fn(self.config)
-        else:
-            model = self.config.model_fn(self.config)
+    def _feed(self, x, y, training):
+        pred = self.model(x, training)
+        loss = loss_functions.miou_loss(y, pred) + tf.reduce_sum(self.model.losses)  # model loss + l2 loss
+        return pred, loss
 
-        lr = tf.keras.experimental.LinearCosineDecay(initial_learning_rate=self.config.init_lr,
-                                                     decay_steps=self.config.decay_steps,
-                                                     num_periods=self.config.num_periods,
-                                                     alpha=self.config.alpha,
-                                                     beta=self.config.beta)
-        optimizer = tf.keras.optimizers.SGD(learning_rate=lr, momentum=0.9)
+    def _train_step(self, train_x, train_y):
+        with tf.GradientTape() as g:
+            _, loss = self._feed(train_x, train_y, True)
+        trainable_variables = self.model.trainable_variables
+        gradients = g.gradient(loss, trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, trainable_variables))
+        return loss
 
-        h, w = self.config.crop_size
-        model.build(input_shape=(None, h, w, 3))
-        epoch, step = 1, 1
-        summary_writer = tf.summary.create_file_writer(os.path.join(self.config.model_dir, 'summary'))
-        while step < self.config.max_step:
+    def _val_step(self, val_x, val_y):
+        _, loss = self._feed(val_x, val_y, False)
+        return loss
+
+    def _write_scalar_summary(self, name, value):
+        with self.summary_writer.as_default():
+            tf.summary.scalar(name, value, step=self.step)
+
+    def train(self):
+        while self.step < self.max_step:
             avg_train_loss = 0
-            for i, (X, Y) in enumerate(iter(self.train_data)):
-                with tf.GradientTape() as g:
-                    pred = model(X)
-                    loss = loss_functions.miou_loss(Y, pred) + tf.reduce_sum(model.losses)  # model loss + l2 loss
-                trainable_variables = model.trainable_variables
-                gradients = g.gradient(loss, trainable_variables)
-                optimizer.apply_gradients(zip(gradients, trainable_variables))
+            tic = time.time()
+            for i, (x, y) in enumerate(iter(self.train_data)):
+                loss = self._train_step(x, y)
                 avg_train_loss += loss
-                if step % self.config.logging_step == 0:
-                    print('Training epoch:%d, Step: %d, loss:%.3f, lr: %.9f' % (epoch, step, loss, optimizer._decayed_lr(tf.float32)), end='\r', flush=True)
+                if self.step % self.logging_step == 0:
+                    print('Training epoch:%d, Step: %d, loss:%.3f, lr: %.9f'
+                          % (self.epoch, self.step, loss, self.optimizer._decayed_lr(tf.float32)), end='\r', flush=True)
 
-                if step % self.config.val_step == 0:
+                if self.step % self.val_step == 0:
                     avg_val_loss = 0
-                    for j, (X_val, Y_val) in enumerate(iter(self.val_data)):
-                        pred = model(X_val)
-                        avg_val_loss += loss_functions.miou_loss(Y_val, pred)
-                        print('Val loss @ epoch-%d: %.3f' % (epoch, loss), end='\r', flush=True)
-                    with summary_writer.as_default():
-                        tf.summary.scalar('val_loss', avg_val_loss / (j + 1), step=step)
-                    print('Average val loss @ epoch-%d: %.3f' % (epoch, avg_val_loss / (j + 1)))
+                    for j, (x_val, y_val) in enumerate(iter(self.val_data)):
+                        avg_val_loss += self._val_step(x_val, y_val)
+                        print('Val loss @ epoch-%d: %.3f' % (self.epoch, loss), end='\r', flush=True)
+                    avg_val_loss /= (j + 1)
+                    self._write_scalar_summary('val_loss', avg_val_loss)
+                    print('Average val loss @ epoch-%d: %.3f' % (self.epoch, avg_val_loss / (j + 1)))
 
-                if step % self.config.saving_step == 0:
-                    model.save_weights(filepath=os.path.join(self.config.model_dir, 'model_ckpt', 'step-%06d' % step), save_format='tf')
+                if self.step % self.saving_step == 0:
+                    self.model.save(filepath=os.path.join(self.model_dir, 'model_ckpt', 'step-%06d' % self.step), save_format='tf')
+                    print('model @ step-%d is saved' % self.step)
 
-                    print('model @ step-%d is saved' % step)
+                if self.step % self.summary_step == 0:
+                    self._write_scalar_summary('train_loss', avg_train_loss / (i + 1))
+                    self._write_scalar_summary('learning_rate', self.optimizer._decayed_lr(tf.float32))
 
-                if step % self.config.summary_step == 0:
-                    with summary_writer.as_default():
-                        tf.summary.scalar('train_loss', avg_train_loss / (i + 1), step=step)
-                        tf.summary.scalar('learning rate', optimizer._decayed_lr(tf.float32), step=step)
-
-                if step >= self.config.max_step:
-                    with summary_writer.as_default():
-                        tf.summary.scalar('train_loss', avg_train_loss / (i + 1), step=step)
+                if self.step >= self.max_step:
+                    self._write_scalar_summary('train_loss', avg_train_loss / (i + 1))
                     break
-
-                step += 1
-            print('Average train loss @ epoch-%d: %.3f' % (epoch, avg_train_loss / (i + 1)))
-            with summary_writer.as_default():
-                tf.summary.scalar('train_loss', avg_train_loss / (i + 1), step=step)
-            epoch += 1
-
-    # import matplotlib.pyplot as plt
-    # rndidx = np.random.randint(len(pred))
-    # plt.subplot(2, 3, 1)
-    # plt.imshow((X[rndidx, ::].numpy() * 255).astype(int))
-    # plt.subplot(2, 3, 2)
-    # plt.imshow(Y[rndidx, :, :, 0].numpy().astype(int))
-    # plt.subplot(2, 3, 3)
-    # plt.imshow(pred[rndidx, :, :, 0].numpy())
-    # rndidx = np.random.randint(len(pred))
-    # plt.subplot(2, 3, 4)
-    # plt.imshow((X[rndidx, ::].numpy() * 255).astype(int))
-    # plt.subplot(2, 3, 5)
-    # plt.imshow(Y[rndidx, :, :, 0].numpy().astype(int))
-    # plt.subplot(2, 3, 6)
-    # plt.imshow(pred[rndidx, :, :, 0].numpy())
+                self.step += 1
+            print('Average train loss @ epoch-%d (step-%d): %.3f | %.3f sec/epoch'
+                  % (self.epoch, self.step - 1, avg_train_loss / (i + 1), time.time() - tic))
+            self._write_scalar_summary('train_loss', avg_train_loss / (i + 1))
+            self.epoch += 1
 
 
 class EvalHandler:
@@ -233,13 +222,23 @@ class VisHandler:
             raise ValueError("Unexpected data_type")
 
 
-class ModelHandler(TrainHandler, EvalHandler, VisHandler):
+class ModelHandler(EvalHandler, VisHandler):
     def __init__(self, data, config):
-        self.config = config
-        self.train_data = data[0]
-        self.val_data = data[1]
-        super(ModelHandler, self).__init__()
-        self._execute()
+        if config.device == 'tpu':
+            try:
+                tpu = tf.distribute.cluster_resolver.TPUClusterResolver()
+                print('Running on TPU ', tpu.cluster_spec().as_dict()['worker'])
+            except ValueError:
+                raise BaseException('ERROR: Not connected to a TPU runtime;')
+            tf.config.experimental_connect_to_cluster(tpu)
+            tf.tpu.experimental.initialize_tpu_system(tpu)
+            tpu_strategy = tf.distribute.experimental.TPUStrategy(tpu)
+            with tpu_strategy.scope():
+                self.model = config.model_fn(config)
+        else:
+            self.model = config.model_fn(config)
+        if config.phase == 'train':
+            TrainHandler(self.model, config).train()
 
     @staticmethod
     def fp32_var_getter(getter,

@@ -6,7 +6,7 @@ config = {
 
     # learning policy
     # tf.keras.experimental.LinearCosineDecay
-    "init_lr": 0.003,
+    "init_lr": 0.004,
     "decay_steps": 9000,
     "num_periods": 3,
     "alpha": 0.05,

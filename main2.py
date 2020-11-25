@@ -6,7 +6,7 @@ from functions import conv_blocks
 import argparse
 
 argparser = argparse.ArgumentParser()
-argparser.add_argument('--model_name', type=str, default='model1', help='options: in developing')
+argparser.add_argument('--model_name', type=str, default='model2', help='options: in developing')
 argparser.add_argument('--phase', type=str, default='train', help='options: train, test, vis')
 args = argparser.parse_args()
 
@@ -20,4 +20,3 @@ num = 0
 for x, y in tr:
     num += len(x)
 ModelHandler(datasets, config)
-

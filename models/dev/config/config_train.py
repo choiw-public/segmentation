@@ -16,15 +16,15 @@ config = {
 
     # logging
     "logging_step": 1,
-    "saving_step": 400,
-    "val_step": 100,
-    "summary_step": 100,
+    "saving_step": 20,
+    "val_step": 20,
+    "summary_step": 20,
 
     # input
-    "train_tfrecord_dir": '/content/kidney_datasets/x16_tile_trainval1/train',  # tfrecord_folder
-    "train_batch_size": 32,
-    "val_tfrecord_dir": '/content/kidney_datasets/x16_tile_trainval1/val',  # tfrecord_folder
-    "val_batch_size": 32,
+    "train_tfrecord_dir": '/media/wooram/data_hdd/00.DL_datasets/Kaggle_kidney_dataset/x16_tile_trainval1/train',  # tfrecord_folder
+    "train_batch_size": 12,
+    "val_tfrecord_dir": '/media/wooram/data_hdd/00.DL_datasets/Kaggle_kidney_dataset/x16_tile_trainval1/val',  # tfrecord_folder
+    "val_batch_size": 12,
 
     # input - augmentation
     "random_scale_range": [1.0, 1.2],  # scale before cropping. None for skipping
