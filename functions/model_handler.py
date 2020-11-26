@@ -31,8 +31,11 @@ class TrainHandler:
         self.model_dir = config.model_dir
         self.ckpt = tf.train.Checkpoint(step=tf.Variable(0), epoch=tf.Variable(0), optimizer=self.optimizer, net=self.model)
         self.ckpt_manager = tf.train.CheckpointManager(self.ckpt,
-                                                       self.model_dir,
+                                                       os.path.join(self.model_dir, 'saved_ckpts'),
                                                        max_to_keep=None)
+        if self.ckpt_manager.latest_checkpoint:
+            self.ckpt.restore(self.ckpt_manager.latest_checkpoint)
+            print('Last checkpoint is restored and training is continued.')
 
     def _feed(self, x, y, training):
         pred = self.model(x, training)
@@ -54,7 +57,7 @@ class TrainHandler:
 
     def _write_scalar_summary(self, name, value):
         with self.summary_writer.as_default():
-            tf.summary.scalar(name, value, step=self.ckpt.step)
+            tf.summary.scalar(name, value, step=self.ckpt.step.numpy())
 
     def train(self):
         while self.ckpt.step < self.max_step:
@@ -71,7 +74,7 @@ class TrainHandler:
                     avg_val_loss = 0
                     for j, (x_val, y_val) in enumerate(iter(self.val_data)):
                         avg_val_loss += self._val_step(x_val, y_val)
-                        print('Val loss @ epoch-%d: %.3f' % (self.ckpt.epoch, loss), end='\r', flush=True)
+                        print('Val loss @ epoch-%d: %.3f' % (self.ckpt.epoch, loss), end='\r')
                     avg_val_loss /= (j + 1)
                     self._write_scalar_summary('val_loss', avg_val_loss)
                     print('Average val loss @ epoch-%d: %.3f \n' % (self.ckpt.epoch, avg_val_loss / (j + 1)))

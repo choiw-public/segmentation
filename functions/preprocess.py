@@ -8,8 +8,8 @@ import numpy as np
 
 
 class Preprocessing:
-    # def __init__(self, config):
-    #     self.aug_config = config
+    def __init__(self, config):
+        self.aug_config = config
 
     @staticmethod
     def _fp32(tensor_or_list):
@@ -238,16 +238,23 @@ class Preprocessing:
         return tf.cond(do_shade, lambda: execute_fn(shade_src, image), lambda: image)
 
     @staticmethod
-    def draw_grid(im, grid_num):
+    def _draw_grid(im, grid_num):
         """
         draw_grid lines for visualizing how an image is manipuliated in data augmentation
 
         """
-        grid_size = int(im.shape[1] / grid_num)
-        for i in range(0, im.shape[1], grid_size):
-            cv.line(im, (i, 0), (i, im.shape[0]), color=(255,))
-        for j in range(0, im.shape[0], grid_size):
-            cv.line(im, (0, j), (im.shape[1], j), color=(255,))
+
+        grid_size = im.shape[1] // grid_num
+        im = im.numpy()
+        shape = im.shape
+        if shape[2] == 1:
+            color = 1
+        else:
+            color = 255
+        for i in range(0, shape[1], shape[1] // grid_num):
+            cv.line(im, (i, 0), (i, im.shape[0]), color=(color))
+        for j in range(0, shape[0], shape[0] // grid_num):
+            cv.line(im, (0, j), (im.shape[1], j), color=(color))
         return im
 
     @staticmethod
@@ -293,7 +300,7 @@ class Preprocessing:
         return image, gt
 
     @staticmethod
-    def elastic_transform(img_gt_pair, prob):
+    def _elastic_transform(img_gt_pair, prob):
         """Elastic deformation of images as described in [Simard2003]_ (with modifications).
         .. [Simard2003] Simard, Steinkraus and Platt, "Best Practices for
              Convolutional Neural Networks applied to Visual Document Analysis", in
@@ -302,11 +309,12 @@ class Preprocessing:
 
          Based on https://gist.github.com/erniejunior/601cdf56d2b424757de5
         """
-        if np.random.rand() <= prob:
+        img_gt_pair = img_gt_pair.numpy()
+        if tf.random.uniform([]) <= prob:
             random_state = np.random.RandomState(None)
             # scale up 4 times just in case seg has very thin line of labels
             shape = img_gt_pair.shape
-            shape_size = shape[:2]
+            shape_size = tuple(shape[:2])
 
             # (image, alpha, sigma, alpha_affine, random_state=None)
             alpha = shape[1] * np.random.randint(1, 4)
@@ -372,14 +380,15 @@ class Preprocessing:
                 gt.set_shape([self.aug_config.crop_size[0], self.aug_config.crop_size[1]])
                 gt = tf.expand_dims(gt, 2)
             if self.aug_config.elastic_distortion_prob > 0.0:
-                raise ValueError('not supported yet')
-                # image = tf.py_function(self.draw_grid, [image, 5], tf.float32)  # uncomment to visualize
+                # raise ValueError('not supported yet')
+                # image = tf.py_function(self._draw_grid, [image, 5], tf.float32)  # uncomment to visualize
+                # gt = tf.py_function(self._draw_grid, [gt, 5], tf.float32)  # uncomment to visualize
                 img_gt_pair = tf.concat([image, gt], 2)
-                img_gt_pair = tf.py_function(self.elastic_transform,
+                img_gt_pair = tf.py_function(self._elastic_transform,
                                              [img_gt_pair, self.aug_config.elastic_distortion_prob],
                                              tf.float32)
 
-                img_gt_pair.set_shape([self.aug_config.crop_size[0], self.aug_config.crop_size[1], 4])
+                # img_gt_pair.set_shape([self.aug_config.crop_size[0], self.aug_config.crop_size[1], 4])
                 image = img_gt_pair[:, :, :3]
                 gt = img_gt_pair[:, :, 3]
                 gt.set_shape([self.aug_config.crop_size[0], self.aug_config.crop_size[1]])
