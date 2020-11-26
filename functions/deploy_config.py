@@ -12,13 +12,8 @@ def deploy(args):
     config['model_name'] = args.model_name
     model_fn_path = ".".join(['models', args.model_name, 'model_fn'])
     config['model_fn'] = imp.import_module(model_fn_path).ModelFunction
-    if phase == "train":
-        config["training"] = True
-    else:
-        config["training"] = False
-        config["train_tfrecord3"] = None
-        config["train_tfrecord2"] = None
-        config["eval_log_dir"] = "/".join(["./model", "eval_metric"])
+    if phase == 'test':
+        config["img_dir"] = "/".join(["./model", "eval_metric"])
         config["batch_size"] = 1
         if phase == "eval":
             config["eval_log_dir"] = "/".join(["./model", "eval_metric"])

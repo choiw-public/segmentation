@@ -4,8 +4,10 @@ from cv2 import VideoCapture, VideoWriter, VideoWriter_fourcc, imwrite
 from functions.data_pipeline import get_datasets
 from math import pi, isnan, isinf
 import importlib as imp
+
 import tensorflow as tf
 import tensorflow_addons as tfa
+import tensorflow_probability as tfp
 import numpy as np
 import time
 import os
@@ -29,13 +31,17 @@ class TrainHandler:
         self.saving_step = config.saving_step
         self.summary_step = config.summary_step
         self.model_dir = config.model_dir
-        self.ckpt = tf.train.Checkpoint(step=tf.Variable(0), epoch=tf.Variable(0), optimizer=self.optimizer, net=self.model)
+        self.ckpt = tf.train.Checkpoint(step=tf.Variable(0), epoch=tf.Variable(0), optimizer=self.optimizer,
+                                        net=self.model)
         self.ckpt_manager = tf.train.CheckpointManager(self.ckpt,
                                                        os.path.join(self.model_dir, 'saved_ckpts'),
                                                        max_to_keep=None)
+        self.mixup_prob = config.mixup_prob
+        self.mixup_holder = []
+        self.mixup_dist_fn = tfp.distributions.Beta(0.2, 0.2)
         if self.ckpt_manager.latest_checkpoint:
             self.ckpt.restore(self.ckpt_manager.latest_checkpoint)
-            print('Last checkpoint is restored and training is continued.')
+            print('Last checkpoint is restored and training is continued')
 
     def _feed(self, x, y, training):
         pred = self.model(x, training)
@@ -59,16 +65,34 @@ class TrainHandler:
         with self.summary_writer.as_default():
             tf.summary.scalar(name, value, step=self.ckpt.step.numpy())
 
+    def _mixup(self, x, y):
+        if np.random.uniform(0, 1) >= self.mixup_prob:
+            if self.mixup_holder:
+                x_tmp = self.mixup_holder[0][0]
+                y_tmp = self.mixup_holder[0][1]
+                dist = self.mixup_dist_fn.sample([len(x_tmp), 1, 1, 1])
+                x_new = dist * x + (1 - dist) * x_tmp
+                y_new = dist * y + (1 - dist) * y_tmp
+                self.mixup_holder.pop()
+                self.mixup_holder.append([x, y])
+                return x_new, y_new
+            else:
+                self.mixup_holder.append([x, y])
+                return x, y
+        return x, y
+
     def train(self):
         while self.ckpt.step < self.max_step:
             avg_train_loss = 0
             tic = time.time()
             for i, (x, y) in enumerate(iter(self.train_data)):
+                x, y = self._mixup(x, y)
                 loss = self._train_step(x, y)
                 avg_train_loss += loss
                 if self.ckpt.step % self.logging_step == 0:
                     print('Model name: %s, Epoch:%d, Step: %d, Loss:%.3f, lr: %.9f'
-                          % (self.model_name, self.ckpt.epoch, self.ckpt.step, loss, self.optimizer._decayed_lr(tf.float32)), end='\r', flush=True)
+                          % (self.model_name, self.ckpt.epoch, self.ckpt.step, loss,
+                             self.optimizer._decayed_lr(tf.float32)), end='\r', flush=True)
 
                 if self.ckpt.step % self.val_step == 0:
                     avg_val_loss = 0
@@ -228,7 +252,7 @@ class VisHandler:
 
 
 class ModelHandler(EvalHandler, VisHandler):
-    def __init__(self, data, config):
+    def __init__(self, config):
         if config.device == 'tpu':
             try:
                 tpu = tf.distribute.cluster_resolver.TPUClusterResolver()

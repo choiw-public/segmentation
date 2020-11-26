@@ -87,9 +87,10 @@ class Preprocessing:
             image = tf.cond(on_off, lambda: tf.image.rot90(image, rotate_k), lambda: image)
             gt = tf.cond(on_off, lambda: tf.image.rot90(gt, rotate_k), lambda: gt)
         else:
-            angle = tf.random.uniform((), minval=self.aug_config.rotate_angle_range[0], maxval=self.aug_config.rotate_angle_range[1], dtype=tf.float32)
-            image = tf.cond(on_off, lambda: tfa.image.rotate(image, angle, interpolation="BILINEAR"))
-            gt = tf.cond(on_off, lambda: tfa.image.rotate(gt, angle, interpolation="NEAREST"))
+            raise ValueError('this will not work. I need to debug it')
+            angle = tf.random.uniform([], minval=self.aug_config.rotate_angle_range[0], maxval=self.aug_config.rotate_angle_range[1], dtype=tf.float32)
+            image = tf.cond(on_off, lambda: tfa.image.rotate(image, angle, interpolation="BILINEAR"), lambda: image)
+            gt = tf.cond(on_off, lambda: tfa.image.rotate(gt, angle, interpolation="NEAREST"), lambda: gt)
         return image, gt
 
     def _random_quality(self, image):
@@ -243,8 +244,6 @@ class Preprocessing:
         draw_grid lines for visualizing how an image is manipuliated in data augmentation
 
         """
-
-        grid_size = im.shape[1] // grid_num
         im = im.numpy()
         shape = im.shape
         if shape[2] == 1:
@@ -335,6 +334,8 @@ class Preprocessing:
             x, y, z = np.meshgrid(np.arange(shape[1]), np.arange(shape[0]), np.arange(shape[2]))
             indices = np.reshape(y + dy, (-1, 1)), np.reshape(x + dx, (-1, 1)), np.reshape(z, (-1, 1))
             return map_coordinates(img_gt_pair, indices, order=1, mode='reflect').reshape(shape)
+        else:
+            return img_gt_pair
 
     def preprocessing(self, image, gt):
         if image is None:

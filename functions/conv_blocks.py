@@ -85,8 +85,10 @@ class DenseConcat(layers.Layer):
         self.gc_factor = gc_factor
         self.dense_layers = []
         for i, (out_depth, conv_size) in enumerate(zip(out_depth_list, conv_size_list)):
-            self.dense_layers.append(Conv(out_depth, conv_size, 1, l2_decay, True, False, 0, scope=scope + '/concat%d-pw' % (i + 1)))
-            self.dense_layers.append(Conv(out_depth, conv_size, 1, l2_decay, True, True, 0, scope=scope + '/concat%d-conv' % (i + 1)))
+            self.dense_layers.append(
+                Conv(out_depth, conv_size, 1, l2_decay, True, False, 0, scope=scope + '/concat%d-pw' % (i + 1)))
+            self.dense_layers.append(
+                Conv(out_depth, conv_size, 1, l2_decay, True, True, 0, scope=scope + '/concat%d-conv' % (i + 1)))
         if self.gc_factor:
             self.gc_layer = GCBlock(out_depth_list[-1], gc_factor, scope + '/gc')
 

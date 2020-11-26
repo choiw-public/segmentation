@@ -100,7 +100,7 @@ def get_datasets(config):
         val_data = DataPipeline(tfrecord_dir=config.val_tfrecord_dir,
                                 batch_size=config.val_batch_size,
                                 aug_config=None,
-                                is_train_set=True).build()
+                                is_train_set=False).build()
     else:
         val_data = None
     return train_data, val_data

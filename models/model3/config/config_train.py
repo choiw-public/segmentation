@@ -6,12 +6,12 @@ config = {
 
     # learning policy
     # tf.keras.experimental.LinearCosineDecay
-    "init_lr": 0.004,
+    "init_lr": 0.003,
     "decay_steps": 9000,
     "num_periods": 3,
     "alpha": 0.05,
     "beta": 0.01,
-    "weight_decay": 0.00006,
+    "weight_decay": 0.00001,
     "max_step": 9000,
 
     # logging
@@ -21,17 +21,13 @@ config = {
     "summary_step": 100,
 
     # input
-    # "train_tfrecord_dir": '/content/kidney_datasets/x16_tile_trainval1/train',  # tfrecord_folder
-    # "train_batch_size": 32,
-    # "val_tfrecord_dir": '/content/kidney_datasets/x16_tile_trainval1/val',  # tfrecord_folder
-    # "val_batch_size": 32,
-    "train_tfrecord_dir": '/media/wooram/data_hdd/00.DL_datasets/Kaggle_kidney_dataset/x16_tile_trainval1/train',  # tfrecord_folder
+    "train_tfrecord_dir": '/content/kidney_datasets/x16_tile_trainval1/train',  # tfrecord_folder
     "train_batch_size": 32,
-    "val_tfrecord_dir": '/media/wooram/data_hdd/00.DL_datasets/Kaggle_kidney_dataset/x16_tile_trainval1/val',  # tfrecord_folder
+    "val_tfrecord_dir": '/content/kidney_datasets/x16_tile_trainval1/val',  # tfrecord_folder
     "val_batch_size": 32,
 
     # input - augmentation
-    "random_scale_range": [0.8, 2.0],  # scale before cropping. None for skipping
+    "random_scale_range": [1.0, 1.2],  # scale before cropping. None for skipping
     "crop_size": [257, 257],
     "flip_probability": 0.5,
     "rotate_probability": 0.5,
@@ -58,5 +54,5 @@ config = {
     "warp_prob": 0.0,
     "warp_ratio": 0.0,
     "warp_crop_prob": 0.0,
-    "elastic_distortion_prob": 0.1,
+    "elastic_distortion_prob": 0.0,
 }
